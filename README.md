@@ -24,6 +24,16 @@ MRI2Music is a Python tool that converts brain MRI data into configurable electr
 2. Configure the processing mode and audio generation parameters.
 3. Generate a WAV file that reflects MRI-derived features as electronic music.
 
+Example:
+
+```bash
+python inspect_mri.py \
+  --nifti data/open_source/sub-01_ses-mri_acq-mprage_T1w.nii.gz \
+  --json data/open_source/sub-01_ses-mri_acq-mprage_T1w.json
+```
+
+Then use the generated GIF and metadata insights to guide audio synthesis.
+
 ## Notes
 
 - Focus is on brain MRI data, with the option to use open source 3D scan metadata and clinical imaging fields.
