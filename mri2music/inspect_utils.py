@@ -113,6 +113,118 @@ def print_nifti_characteristics(characteristics: Dict[str, Any]) -> None:
     print(f"  Flip angle: {_format_float(characteristics['flip_angle'])}")
 
 
+def compute_global_statistics(
+    volume: np.ndarray,
+    percentiles: Tuple[int, ...] = (10, 50, 90),
+) -> Dict[str, Any]:
+    values = np.asarray(volume, dtype=np.float64).ravel()
+    if values.size == 0:
+        return {
+            "mean_intensity": 0.0,
+            "std_intensity": 0.0,
+            "percentiles": {f"p{p}": 0.0 for p in percentiles},
+        }
+
+    mean_intensity = float(np.mean(values))
+    std_intensity = float(np.std(values))
+    percentile_values = np.percentile(values, list(percentiles))
+    percentiles_dict = {f"p{p}": float(val) for p, val in zip(percentiles, percentile_values)}
+
+    return {
+        "mean_intensity": mean_intensity,
+        "std_intensity": std_intensity,
+        "percentiles": percentiles_dict,
+    }
+
+
+def _slice_summary(
+    slice_data: np.ndarray,
+) -> Tuple[float, float, float]:
+    slice_values = np.asarray(slice_data, dtype=np.float64)
+    mean_value = float(np.mean(slice_values))
+    std_value = float(np.std(slice_values))
+    if slice_values.ndim == 2:
+        grad_y, grad_x = np.gradient(slice_values)
+        edge_strength = float(np.mean(np.sqrt(grad_x ** 2 + grad_y ** 2)))
+    else:
+        edge_strength = float(np.mean(np.abs(np.gradient(slice_values))))
+    return mean_value, std_value, edge_strength
+
+
+def compute_slice_statistics(
+    volume: np.ndarray,
+    axis: int = 2,
+) -> Dict[str, np.ndarray]:
+    if volume.ndim < 2:
+        raise ValueError("Volume must have at least 2 dimensions for slice statistics.")
+
+    axis = min(max(axis, 0), volume.ndim - 1)
+    num_slices = volume.shape[axis]
+    means = np.zeros(num_slices, dtype=np.float64)
+    stds = np.zeros(num_slices, dtype=np.float64)
+    edges = np.zeros(num_slices, dtype=np.float64)
+
+    for idx in range(num_slices):
+        slice_data = np.take(volume, idx, axis=axis)
+        if slice_data.ndim > 2:
+            slice_data = np.mean(slice_data, axis=-1)
+        means[idx], stds[idx], edges[idx] = _slice_summary(slice_data)
+
+    return {
+        "slice_means": means,
+        "slice_stds": stds,
+        "edge_strengths": edges,
+    }
+
+
+def compute_voxel_characteristics(
+    volume: np.ndarray,
+    index: Optional[Tuple[int, int, int]] = None,
+) -> Dict[str, float]:
+    if volume.ndim < 3:
+        raise ValueError("Volume must have at least 3 dimensions for voxel statistics.")
+
+    if index is None:
+        index = tuple(int(s // 2) for s in volume.shape[:3])
+    intensity = float(volume[index])
+    min_intensity = float(np.min(volume))
+    max_intensity = float(np.max(volume))
+    if max_intensity > min_intensity:
+        normalized = float((intensity - min_intensity) / (max_intensity - min_intensity))
+    else:
+        normalized = 0.0
+
+    return {
+        "voxel_index": tuple(index),
+        "voxel_intensity": intensity,
+        "normalized_intensity": normalized,
+    }
+
+
+def plot_slice_statistics(
+    stats: Dict[str, np.ndarray],
+    output_path: Path,
+) -> Path:
+    import matplotlib.pyplot as plt
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    indices = np.arange(stats["slice_means"].shape[0])
+    plt.figure(figsize=(10, 5))
+    plt.plot(indices, stats["slice_means"], label="Mean intensity")
+    plt.plot(indices, stats["slice_stds"], label="Std intensity")
+    plt.plot(indices, stats["edge_strengths"], label="Edge strength")
+    plt.xlabel("Slice index")
+    plt.ylabel("Characteristic value")
+    plt.title("Slice-specific MRI characteristics")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(str(output_path), dpi=150)
+    plt.close()
+    return output_path
+
+
 def create_slice_gif(
     volume: np.ndarray,
     output_path: Path,
